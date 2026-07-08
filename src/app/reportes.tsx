@@ -29,7 +29,10 @@ export default function Reportes() {
   const cargarDashboard = async () => {
     try {
       const datos = await obtenerDashboard();
-      setDashboard(datos);
+      setDashboard((prev) => ({
+        ...prev,
+        ...datos,
+      }));
     } catch (error) {
       console.log(error);
     }
