@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 
-import { actualizarUsuario, eliminarUsuario, obtenerUsuarios } from "../services/usuarioService";
+import { actualizarUsuario, crearUsuario, eliminarUsuario, obtenerUsuarios } from "../services/usuarioService";
 
 type Usuario = {
   id_usuario?: number;
@@ -31,28 +31,54 @@ export default function Usuarios() {
   const [rol, setRol] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [esAdmin, setEsAdmin] = useState(false);
+  const [modoCreacion, setModoCreacion] = useState(false);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const [notificacion, setNotificacion] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
+  const [pagina, setPagina] = useState(1);
+  const [busqueda, setBusqueda] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [totalPaginas, setTotalPaginas] = useState(1);
 
   useEffect(() => {
     cargarUsuarios();
     verificarPermisos();
   }, []);
 
-  const cargarUsuarios = async () => {
+  const cargarUsuarios = async (
+
+    paginaActual = 1
+
+  ) => {
+
     try {
+
       setCargando(true);
-      const datos = await obtenerUsuarios();
-      const lista = Array.isArray(datos) ? datos : datos?.usuarios ?? [];
-      const ordenados = [...lista].sort((a, b) =>
-        (a.nombre_usuario ?? "").localeCompare(b.nombre_usuario ?? "", "es", { sensitivity: "base" })
+
+      const respuesta = await obtenerUsuarios(
+
+        paginaActual,
+
+        10
+
       );
-      setUsuarios(ordenados);
+
+      setUsuarios(respuesta.datos);
+
+      setPagina(respuesta.pagina);
+
+      setTotalPaginas(respuesta.totalPaginas);
+
     } catch (error) {
+
       console.log(error);
+
     } finally {
+
       setCargando(false);
+
     }
+
   };
 
   const verificarPermisos = async () => {
@@ -70,6 +96,19 @@ export default function Usuarios() {
   const mostrarNotificacion = (tipo: "success" | "error", texto: string) => {
     setNotificacion({ tipo, texto });
     setTimeout(() => setNotificacion(null), 2500);
+  };
+
+  const abrirCreacion = () => {
+    if (!esAdmin) {
+      Alert.alert("Acceso denegado", "Solo el administrador puede crear usuarios.");
+      return;
+    }
+
+    setModoCreacion(true);
+    setUsuarioSeleccionado(null);
+    setNombre("");
+    setCorreo("");
+    setRol("Supervisor");
   };
 
   const abrirEdicion = async (usuario: Usuario) => {
@@ -95,28 +134,41 @@ export default function Usuarios() {
   };
 
   const guardarEdicion = async () => {
-    if (!usuarioSeleccionado || !esAdmin) return;
+    if (!esAdmin) return;
+
+    if (!modoCreacion && !usuarioSeleccionado) return;
 
     try {
       setGuardando(true);
 
       const idRol = obtenerIdRol(rol);
-      await actualizarUsuario(usuarioSeleccionado.id_usuario!, {
-        nombre_usuario: nombre,
-        correo,
+      const payload = {
+        nombre_usuario: nombre.trim(),
+        correo: correo.trim(),
+        password: password,
         id_rol: idRol,
-      });
+      };
 
-      const actualizados = usuarios.map((usuario) =>
-        usuario.id_usuario === usuarioSeleccionado.id_usuario
-          ? { ...usuario, nombre_usuario: nombre, correo, id_rol: idRol }
-          : usuario
-      );
+      if (modoCreacion) {
+        await crearUsuario(payload);
+        await cargarUsuarios();
+        setModoCreacion(false);
+        mostrarNotificacion("success", "Usuario creado correctamente.");
+        Alert.alert("Éxito", "Usuario creado correctamente.");
+      } else {
+        await actualizarUsuario(usuarioSeleccionado!.id_usuario!, payload);
 
-      setUsuarios(actualizados);
-      setUsuarioSeleccionado(null);
-      mostrarNotificacion("success", "Cambios guardados correctamente.");
-      Alert.alert("Éxito", "Cambios guardados correctamente.");
+        const actualizados = usuarios.map((usuario) =>
+          usuario.id_usuario === usuarioSeleccionado!.id_usuario
+            ? { ...usuario, nombre_usuario: payload.nombre_usuario, correo: payload.correo, id_rol: payload.id_rol }
+            : usuario
+        );
+
+        setUsuarios(actualizados);
+        setUsuarioSeleccionado(null);
+        mostrarNotificacion("success", "Cambios guardados correctamente.");
+        Alert.alert("Éxito", "Cambios guardados correctamente.");
+      }
     } catch (error) {
       console.log(error);
       Alert.alert("Error", "No se pudo actualizar el usuario.");
@@ -178,8 +230,16 @@ export default function Usuarios() {
   return (
     <View style={styles.container}>
       {notificacion ? (
-        <View style={[styles.banner, notificacion.tipo === "success" ? styles.bannerSuccess : styles.bannerError]}>
-          <Text style={styles.bannerText}>{notificacion.texto}</Text>
+        <View
+          style={{
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            marginBottom: 10,
+            backgroundColor: notificacion.tipo === "success" ? "#dcfce7" : "#fee2e2",
+          }}
+        >
+          <Text style={{ color: "#0f172a", fontWeight: "600", fontSize: 13 }}>{notificacion.texto}</Text>
         </View>
       ) : null}
 
@@ -203,14 +263,35 @@ export default function Usuarios() {
           <Text style={styles.summaryValue}>{usuarios.length}</Text>
           <Text style={styles.summaryLabel}>usuarios</Text>
         </View>
+
+        {esAdmin ? (
+          <TouchableOpacity style={styles.createButton} onPress={abrirCreacion} activeOpacity={0.9}>
+            <Text style={styles.createButtonIcon}>＋</Text>
+            <Text style={styles.createButtonText}>Crear</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {cargando ? (
         <ActivityIndicator size="large" color="#2563eb" style={styles.loader} />
       ) : usuarios.length > 0 ? (
         <>
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Buscar por nombre de usuario"
+              value={busqueda}
+              onChangeText={setBusqueda}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
+          </View>
           <FlatList
-            data={usuarios}
+            data={
+              busqueda.trim()
+                ? usuarios.filter((u) => (u.nombre_usuario ?? "").toLowerCase().includes(busqueda.trim().toLowerCase()))
+                : usuarios
+            }
             keyExtractor={(item: Usuario, index: number) =>
               item?.id_usuario ? item.id_usuario.toString() : index.toString()
             }
@@ -222,6 +303,7 @@ export default function Usuarios() {
                 activeOpacity={0.85}
                 onPress={() => abrirEdicion(item)}
               >
+
                 <View style={styles.cardHeader}>
                   <Text style={styles.name}>{item.nombre_usuario ?? "Sin nombre"}</Text>
                   <View style={styles.badge}>
@@ -234,11 +316,47 @@ export default function Usuarios() {
               </TouchableOpacity>
             )}
           />
+          <View style={styles.paginacion}>
 
-          {usuarioSeleccionado && (
+            <TouchableOpacity
+
+              disabled={pagina === 1}
+
+              onPress={() => cargarUsuarios(pagina - 1)}
+
+              style={styles.botonPagina}
+
+            >
+
+              <Text>Anterior</Text>
+
+            </TouchableOpacity>
+
+            <Text>
+
+              Página {pagina} de {totalPaginas}
+
+            </Text>
+
+            <TouchableOpacity
+
+              disabled={pagina === totalPaginas}
+
+              onPress={() => cargarUsuarios(pagina + 1)}
+
+              style={styles.botonPagina}
+
+            >
+
+              <Text>Siguiente</Text>
+
+            </TouchableOpacity>
+
+          </View>
+          {(usuarioSeleccionado || modoCreacion) && (
             <View style={styles.modalContainer}>
               <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>Editar usuario</Text>
+                <Text style={styles.modalTitle}>{modoCreacion ? "Crear usuario" : "Editar usuario"}</Text>
 
                 <Text style={styles.label}>Nombre</Text>
                 <TextInput
@@ -256,6 +374,14 @@ export default function Usuarios() {
                   placeholder="Correo del usuario"
                   autoCapitalize="none"
                   keyboardType="email-address"
+                />
+                <Text style={styles.label}>Contraseña</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Contraseña"
+                  value={password}
+                  secureTextEntry
+                  onChangeText={setPassword}
                 />
 
                 <Text style={styles.label}>Rol</Text>
@@ -318,6 +444,7 @@ export default function Usuarios() {
                     style={styles.cancelButton}
                     onPress={() => {
                       setUsuarioSeleccionado(null);
+                      setModoCreacion(false);
                       setMostrarConfirmacion(false);
                     }}
                     activeOpacity={0.8}
@@ -331,7 +458,7 @@ export default function Usuarios() {
                     activeOpacity={0.8}
                     disabled={guardando}
                   >
-                    <Text style={styles.saveButtonText}>{guardando ? "Guardando..." : "Guardar"}</Text>
+                    <Text style={styles.saveButtonText}>{guardando ? "Guardando..." : modoCreacion ? "Crear" : "Guardar"}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -359,6 +486,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 10,
     marginBottom: 14,
   },
   headerContent: {
@@ -394,7 +522,37 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     minWidth: 84,
+    height: 44,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  createButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#09e640",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    minWidth: 84,
+    elevation: 4,
+    shadowColor: "#0fe656",
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    marginLeft: 10,
+  },
+  createButtonIcon: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 16,
+  },
+  createButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 13,
   },
   summaryValue: {
     fontSize: 20,
@@ -404,6 +562,23 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 11,
     color: "#dbeafe",
+  },
+  banner: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  bannerSuccess: {
+    backgroundColor: "#dcfce7",
+  },
+  bannerError: {
+    backgroundColor: "#fee2e2",
+  },
+  bannerText: {
+    color: "#0f172a",
+    fontWeight: "600",
+    fontSize: 13,
   },
   listContent: {
     paddingBottom: 20,
@@ -486,6 +661,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 6,
     backgroundColor: "#F8FAFC",
+    color: "#0F172A",
+  },
+  searchContainer: {
+    marginBottom: 12,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
     color: "#0F172A",
   },
   modalActions: {
@@ -616,5 +803,18 @@ const styles = StyleSheet.create({
     color: "#64748b",
     marginTop: 6,
     textAlign: "center",
+  },
+  paginacion: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20
+  },
+
+  botonPagina: {
+    backgroundColor: "#5398c7",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10
   },
 });

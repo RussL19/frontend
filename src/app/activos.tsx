@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -5,6 +6,7 @@ import {
     Alert,
     FlatList,
     Modal,
+    Platform,
     Pressable,
     StyleSheet,
     Text,
@@ -13,7 +15,7 @@ import {
     View
 } from "react-native";
 
-import { actualizarActivo, obtenerActivos } from "../services/activoService";
+import { actualizarActivo, crearActivo, obtenerActivos } from "../services/activoService";
 
 type Activo = {
     id_activo?: number;
@@ -21,13 +23,19 @@ type Activo = {
     serie?: string;
     nombre?: string;
     estado?: string;
+    categoria?: string;
+    marca?: string;
+    categoria_nombre?: string;
+    marca_nombre?: string;
 };
 
 export default function Activos() {
     const router = useRouter();
     const [activos, setActivos] = useState<Activo[]>([]);
     const [cargando, setCargando] = useState(true);
-    const [busqueda, setBusqueda] = useState("");
+    const [filtroNombre, setFiltroNombre] = useState("");
+    const [filtroCategoria, setFiltroCategoria] = useState("");
+    const [filtroMarca, setFiltroMarca] = useState("");
     const [modalVisible, setModalVisible] = useState(false);
     const [activoSeleccionado, setActivoSeleccionado] = useState<Activo | null>(null);
     const [nombre, setNombre] = useState("");
@@ -35,10 +43,12 @@ export default function Activos() {
     const [serie, setSerie] = useState("");
     const [estado, setEstado] = useState("");
     const [guardando, setGuardando] = useState(false);
+    const [esAdmin, setEsAdmin] = useState(false);
     const [notificacion, setNotificacion] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
 
     useEffect(() => {
         cargarActivos();
+        verificarPermisos();
     }, []);
 
     const cargarActivos = async () => {
@@ -53,6 +63,18 @@ export default function Activos() {
         }
     };
 
+    const verificarPermisos = async () => {
+        try {
+            const usuarioGuardado = await AsyncStorage.getItem("usuario");
+            if (usuarioGuardado) {
+                const usuario = JSON.parse(usuarioGuardado);
+                setEsAdmin(usuario?.id_rol === 1);
+            }
+        } catch (error) {
+            console.log(error);
+        }
+    };
+
     const getEstadoStyle = (estado?: string) => {
         const valor = (estado ?? "").toLowerCase();
 
@@ -64,17 +86,22 @@ export default function Activos() {
     };
 
     const activosFiltrados = activos.filter((item) => {
-        const textoBusqueda = busqueda.trim().toLowerCase();
+        const textoNombre = filtroNombre.trim().toLowerCase();
+        const textoCategoria = filtroCategoria.trim().toLowerCase();
+        const textoMarca = filtroMarca.trim().toLowerCase();
 
-        if (!textoBusqueda) return true;
+        const categoria = [item.categoria, item.categoria_nombre].filter(Boolean).join(" ");
+        const marca = [item.marca, item.marca_nombre].filter(Boolean).join(" ");
+        const textoBusqueda = [item.nombre, item.codigo, item.serie, categoria, marca]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
 
-        const textoId = item.id_activo?.toString() ?? "";
-        const textoSerie = [item.codigo, item.serie].filter(Boolean).join(" ");
+        const coincideNombre = !textoNombre || textoBusqueda.includes(textoNombre);
+        const coincideCategoria = !textoCategoria || categoria.toLowerCase().includes(textoCategoria);
+        const coincideMarca = !textoMarca || marca.toLowerCase().includes(textoMarca);
 
-        return (
-            textoId.toLowerCase().includes(textoBusqueda) ||
-            textoSerie.toLowerCase().includes(textoBusqueda)
-        );
+        return coincideNombre && coincideCategoria && coincideMarca;
     });
 
     const abrirEdicion = (activo: Activo) => {
@@ -98,6 +125,37 @@ export default function Activos() {
     const mostrarNotificacion = (tipo: "success" | "error", texto: string) => {
         setNotificacion({ tipo, texto });
         setTimeout(() => setNotificacion(null), 2500);
+    };
+
+    const crearNuevoActivo = async () => {
+        if (!esAdmin) {
+            Alert.alert("Acceso denegado", "Solo el administrador puede crear activos.");
+            return;
+        }
+
+        if (!nombre.trim() || !codigo.trim() || !serie.trim() || !estado.trim()) {
+            Alert.alert("Campos incompletos", "Completa nombre, código, serie y estado para crear el activo.");
+            return;
+        }
+
+        try {
+            setGuardando(true);
+            await crearActivo({
+                nombre: nombre.trim(),
+                codigo: codigo.trim(),
+                serie: serie.trim(),
+                estado: estado.trim(),
+            });
+            await cargarActivos();
+            cerrarModal();
+            mostrarNotificacion("success", "Activo creado correctamente.");
+            Alert.alert("Éxito", "Activo creado correctamente.");
+        } catch (error) {
+            console.log(error);
+            mostrarNotificacion("error", "No fue posible crear el activo.");
+        } finally {
+            setGuardando(false);
+        }
     };
 
     const guardarEdicion = async () => {
@@ -165,6 +223,24 @@ export default function Activos() {
                     <Text style={styles.summaryValue}>{activos.length}</Text>
                     <Text style={styles.summaryLabel}>registros</Text>
                 </View>
+
+                {esAdmin ? (
+                    <TouchableOpacity
+                        style={styles.createButton}
+                        onPress={() => {
+                            setActivoSeleccionado(null);
+                            setNombre("");
+                            setCodigo("");
+                            setSerie("");
+                            setEstado("");
+                            setModalVisible(true);
+                        }}
+                        activeOpacity={0.9}
+                    >
+                        <Text style={styles.createButtonIcon}>＋</Text>
+                        <Text style={styles.createButtonText}>Crear</Text>
+                    </TouchableOpacity>
+                ) : null}
             </View>
 
             {notificacion ? (
@@ -173,16 +249,45 @@ export default function Activos() {
                 </View>
             ) : null}
 
-            <View style={styles.searchBox}>
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Buscar por ID o serie"
-                    placeholderTextColor="#94a3b8"
-                    value={busqueda}
-                    onChangeText={setBusqueda}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                />
+            <View style={styles.filtersContainer}>
+                <View style={styles.filterBox}>
+                    <Text style={styles.filterLabel}>Nombre</Text>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Buscar por nombre"
+                        placeholderTextColor="#94a3b8"
+                        value={filtroNombre}
+                        onChangeText={setFiltroNombre}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                </View>
+
+                <View style={styles.filterBox}>
+                    <Text style={styles.filterLabel}>Categoría</Text>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Filtrar por categoría"
+                        placeholderTextColor="#94a3b8"
+                        value={filtroCategoria}
+                        onChangeText={setFiltroCategoria}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                </View>
+
+                <View style={styles.filterBox}>
+                    <Text style={styles.filterLabel}>Marca</Text>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Filtrar por marca"
+                        placeholderTextColor="#94a3b8"
+                        value={filtroMarca}
+                        onChangeText={setFiltroMarca}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                </View>
             </View>
 
             <View style={styles.tableHeader}>
@@ -208,6 +313,16 @@ export default function Activos() {
                                 <Text style={styles.serie} numberOfLines={1}>
                                     {item.serie ? `Serie: ${item.serie}` : "Sin serie"}
                                 </Text>
+                                {item.categoria || item.categoria_nombre ? (
+                                    <Text style={styles.metaText} numberOfLines={1}>
+                                        {`Categoría: ${item.categoria ?? item.categoria_nombre}`}
+                                    </Text>
+                                ) : null}
+                                {item.marca || item.marca_nombre ? (
+                                    <Text style={styles.metaText} numberOfLines={1}>
+                                        {`Marca: ${item.marca ?? item.marca_nombre}`}
+                                    </Text>
+                                ) : null}
                             </View>
 
                             <View style={styles.cellSecondary}>
@@ -225,85 +340,159 @@ export default function Activos() {
                 <View style={styles.emptyState}>
                     <Text style={styles.emptyTitle}>No se encontraron activos</Text>
                     <Text style={styles.emptyText}>
-                        {busqueda.trim()
-                            ? "Prueba con otro ID o serie."
+                        {filtroNombre.trim() || filtroCategoria.trim() || filtroMarca.trim()
+                            ? "Prueba con otros filtros de búsqueda."
                             : "Cuando agregues activos aparecerán aquí."}
                     </Text>
                 </View>
             )}
 
-            <Modal
-                visible={modalVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={cerrarModal}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalCard}>
-                        <View style={styles.modalHeader}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.modalTitle}>Editar activo</Text>
-                                <Text style={styles.modalSubtitle}>Actualiza los datos o da de baja el activo.</Text>
+            {modalVisible ? (
+                Platform.OS === "web" ? (
+                    <View style={styles.modalOverlay} accessible={false}>
+                        <View style={styles.modalCard}>
+                            <View style={styles.modalHeader}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.modalTitle}>{activoSeleccionado ? "Editar activo" : "Crear activo"}</Text>
+                                    <Text style={styles.modalSubtitle}>{activoSeleccionado ? "Actualiza los datos o da de baja el activo." : "Ingresa los datos del nuevo activo."}</Text>
+                                </View>
+                                <Pressable onPress={cerrarModal} style={styles.closeButton}>
+                                    <Text style={styles.closeButtonText}>✕</Text>
+                                </Pressable>
                             </View>
-                            <Pressable onPress={cerrarModal} style={styles.closeButton}>
-                                <Text style={styles.closeButtonText}>✕</Text>
-                            </Pressable>
-                        </View>
 
-                        <Text style={styles.fieldLabel}>Nombre</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={nombre}
-                            onChangeText={setNombre}
-                            placeholder="Nombre del activo"
-                        />
+                            <Text style={styles.fieldLabel}>Nombre</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={nombre}
+                                onChangeText={setNombre}
+                                placeholder="Nombre del activo"
+                            />
 
-                        <Text style={styles.fieldLabel}>Código</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={codigo}
-                            onChangeText={setCodigo}
-                            placeholder="Código"
-                        />
+                            <Text style={styles.fieldLabel}>Código</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={codigo}
+                                onChangeText={setCodigo}
+                                placeholder="Código"
+                            />
 
-                        <Text style={styles.fieldLabel}>Serie</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={serie}
-                            onChangeText={setSerie}
-                            placeholder="Serie"
-                        />
+                            <Text style={styles.fieldLabel}>Serie</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={serie}
+                                onChangeText={setSerie}
+                                placeholder="Serie"
+                            />
 
-                        <Text style={styles.fieldLabel}>Estado</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={estado}
-                            onChangeText={setEstado}
-                            placeholder="Disponible, En uso, Mantenimiento o Baja"
-                        />
+                            <Text style={styles.fieldLabel}>Estado</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={estado}
+                                onChangeText={setEstado}
+                                placeholder="Disponible, En uso, Mantenimiento o Baja"
+                            />
 
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={[styles.secondaryButton, guardando && styles.disabledButton]}
-                                onPress={darDeBaja}
-                                disabled={guardando}
-                            >
-                                <Text style={styles.secondaryButtonText}>Dar de baja</Text>
-                            </TouchableOpacity>
+                            <View style={styles.modalActions}>
+                                {activoSeleccionado ? (
+                                    <TouchableOpacity
+                                        style={[styles.secondaryButton, guardando && styles.disabledButton]}
+                                        onPress={darDeBaja}
+                                        disabled={guardando}
+                                    >
+                                        <Text style={styles.secondaryButtonText}>Dar de baja</Text>
+                                    </TouchableOpacity>
+                                ) : null}
 
-                            <TouchableOpacity
-                                style={[styles.primaryButton, guardando && styles.disabledButton]}
-                                onPress={guardarEdicion}
-                                disabled={guardando}
-                            >
-                                <Text style={styles.primaryButtonText}>
-                                    {guardando ? "Guardando..." : "Guardar"}
-                                </Text>
-                            </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.primaryButton, guardando && styles.disabledButton]}
+                                    onPress={activoSeleccionado ? guardarEdicion : crearNuevoActivo}
+                                    disabled={guardando}
+                                >
+                                    <Text style={styles.primaryButtonText}>
+                                        {guardando ? "Guardando..." : activoSeleccionado ? "Guardar" : "Crear"}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
-                </View>
-            </Modal>
+                ) : (
+                    <Modal
+                        visible={modalVisible}
+                        transparent
+                        animationType="fade"
+                        onRequestClose={cerrarModal}
+                    >
+                        <View style={styles.modalOverlay}>
+                            <View style={styles.modalCard}>
+                                <View style={styles.modalHeader}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.modalTitle}>{activoSeleccionado ? "Editar activo" : "Crear activo"}</Text>
+                                        <Text style={styles.modalSubtitle}>{activoSeleccionado ? "Actualiza los datos o da de baja el activo." : "Ingresa los datos del nuevo activo."}</Text>
+                                    </View>
+                                    <Pressable onPress={cerrarModal} style={styles.closeButton}>
+                                        <Text style={styles.closeButtonText}>✕</Text>
+                                    </Pressable>
+                                </View>
+
+                                <Text style={styles.fieldLabel}>Nombre</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={nombre}
+                                    onChangeText={setNombre}
+                                    placeholder="Nombre del activo"
+                                />
+
+                                <Text style={styles.fieldLabel}>Código</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={codigo}
+                                    onChangeText={setCodigo}
+                                    placeholder="Código"
+                                />
+
+                                <Text style={styles.fieldLabel}>Serie</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={serie}
+                                    onChangeText={setSerie}
+                                    placeholder="Serie"
+                                />
+
+                                <Text style={styles.fieldLabel}>Estado</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={estado}
+                                    onChangeText={setEstado}
+                                    placeholder="Disponible, En uso, Mantenimiento o Baja"
+                                />
+
+                                <View style={styles.modalActions}>
+                                    {activoSeleccionado ? (
+                                        <TouchableOpacity
+                                            style={[styles.secondaryButton, guardando && styles.disabledButton]}
+                                            onPress={darDeBaja}
+                                            disabled={guardando}
+                                        >
+                                            <Text style={styles.secondaryButtonText}>Dar de baja</Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+
+                                    <TouchableOpacity
+                                        style={[styles.primaryButton, guardando && styles.disabledButton]}
+                                        onPress={activoSeleccionado ? guardarEdicion : crearNuevoActivo}
+                                        disabled={guardando}
+                                    >
+                                        <Text style={styles.primaryButtonText}>
+                                            {guardando ? "Guardando..." : activoSeleccionado ? "Guardar" : "Crear"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+                )
+            ) : null}
         </View>
     );
 }
@@ -319,6 +508,7 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
+        gap: 10,
         marginBottom: 14
     },
     headerTitleWrap: {
@@ -354,7 +544,9 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 14,
         minWidth: 84,
-        alignItems: "center"
+        height: 44,
+        alignItems: "center",
+        justifyContent: "center"
     },
     summaryValue: {
         fontSize: 20,
@@ -382,14 +574,23 @@ const styles = StyleSheet.create({
         fontWeight: "600",
         fontSize: 13
     },
-    searchBox: {
+    filtersContainer: {
+        marginBottom: 12,
+        gap: 8
+    },
+    filterBox: {
         backgroundColor: "#ffffff",
         borderRadius: 14,
         paddingHorizontal: 12,
         paddingVertical: 8,
-        marginBottom: 12,
         borderWidth: 1,
         borderColor: "#e2e8f0"
+    },
+    filterLabel: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: "#475569",
+        marginBottom: 4
     },
     searchInput: {
         fontSize: 14,
@@ -448,6 +649,11 @@ const styles = StyleSheet.create({
         color: "#94a3b8",
         marginTop: 2
     },
+    metaText: {
+        fontSize: 12,
+        color: "#64748b",
+        marginTop: 2
+    },
     cellSecondary: {
         width: 110,
         alignItems: "flex-end"
@@ -480,7 +686,7 @@ const styles = StyleSheet.create({
         backgroundColor: "#f1f5f9"
     },
     loader: {
-        marginTop: 32
+        marginTop: 40
     },
     emptyState: {
         backgroundColor: "#ffffff",
@@ -501,16 +707,24 @@ const styles = StyleSheet.create({
         textAlign: "center"
     },
     modalOverlay: {
-        flex: 1,
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: "rgba(15, 23, 42, 0.45)",
         justifyContent: "center",
-        padding: 20
+        alignItems: "center",
+        padding: 20,
+        zIndex: 999,
     },
     modalCard: {
         backgroundColor: "#ffffff",
         borderRadius: 18,
         padding: 18,
-        width: "100%"
+        width: "100%",
+        maxWidth: 520,
+        maxHeight: "90%",
     },
     modalHeader: {
         flexDirection: "row",
@@ -587,5 +801,34 @@ const styles = StyleSheet.create({
     },
     disabledButton: {
         opacity: 0.7
-    }
+    },
+    createButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#09e640",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    minWidth: 84,
+    height: 44,
+    elevation: 4,
+    shadowColor: "#0fe656",
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    marginLeft: 10,
+  },
+  createButtonIcon: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 16,
+  },
+  createButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 13,
+  },
 });

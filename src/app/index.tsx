@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { login, register } from "../services/authService";
+import { login, recuperarPassword, register } from "../services/authService";
 export default function LoginScreen() {
 
   const [correo, setCorreo] = useState("");  // Estado para almacenar el correo electrónico ingresado por el usuario
@@ -130,6 +130,44 @@ export default function LoginScreen() {
     }
   };
 
+  const recuperarContrasena = async () => {
+
+    if (!correo.trim()) {
+      Alert.alert(
+        "Correo requerido",
+        "Ingrese su correo electrónico."
+      );
+      return;
+    }
+
+    try {
+
+      await recuperarPassword(correo);
+
+      Alert.alert(
+        "Éxito",
+        "Si el correo existe, se ha enviado un enlace para recuperar la contraseña."
+      );
+      
+
+    } catch (error: any) {
+      console.log("====================");
+        console.log(error);
+        console.log(error.message);
+        console.log(error.stack);
+        console.log("====================");
+
+      console.log(error);
+
+      Alert.alert(
+        "Error",
+        error.response?.data?.mensaje || "No fue posible enviar el correo."
+      );
+
+    }
+
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.backgroundGlow} />
@@ -232,12 +270,26 @@ export default function LoginScreen() {
                   <Text style={styles.buttonText}>Iniciar sesión</Text>
                 </TouchableOpacity>
 
+                
+
                 <TouchableOpacity
                   style={styles.secondaryButton}
                   onPress={() => setMostrarRegistro(true)}
                   activeOpacity={0.9}
                 >
                   <Text style={styles.secondaryButtonText}>Registrar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={recuperarContrasena}>
+                  <Text
+                    style={{
+                      textAlign: "center",
+                      color: "#2563EB",
+                      marginTop: 15,
+                      fontWeight: "600"
+                    }}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </Text>
                 </TouchableOpacity>
               </>
             )}

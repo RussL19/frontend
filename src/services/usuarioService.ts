@@ -1,12 +1,32 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "./api";
 
-export const obtenerUsuarios = async() => {
-    const response = await api.get("/usuarios");
+const getHeaders = async () => {
+    const token = await AsyncStorage.getItem("token");
 
-    console.log(response.data);
+    return {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    };
+};
+
+export const obtenerUsuarios = async (
+
+    pagina = 1,
+
+    limite = 10
+
+) => {
+
+    const response = await api.get(
+
+        `/usuarios?page=${pagina}&limit=${limite}`
+
+    );
 
     return response.data;
+
 };
 
 export const crearUsuario = async(datos:any) => {
@@ -58,3 +78,4 @@ export const eliminarUsuario = async(id:number) => {
 
     return response.data;
 };
+

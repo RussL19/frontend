@@ -2,7 +2,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { actualizarPerfil } from "../services/authService";
 
 export default function Perfil() {
   const [usuario, setUsuario] = useState<any>(null);

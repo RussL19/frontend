@@ -12,6 +12,7 @@ import {
     View
 } from "react-native";
 
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import {
@@ -107,53 +108,52 @@ export default function Mantenimientos() {
 
     };
 
-    const finalizar = async (id: number) => {
+    const finalizar = async (id:number)=>{
 
-        Alert.alert(
+    Alert.alert(
+        "Finalizar",
+        "¿Desea finalizar este mantenimiento?",
+        [
+            {text:"Cancelar"},
+            {
+                text:"Aceptar",
+                onPress:async()=>{
 
-            "Finalizar",
+                    try{
 
-            "¿Desea finalizar este mantenimiento?",
+                        const resp=await finalizarMantenimiento(id);
 
-            [
+                        console.log(resp);
 
-                {
-
-                    text: "Cancelar"
-
-                },
-
-                {
-
-                    text: "Aceptar",
-
-                    onPress: async () => {
-
-                        await finalizarMantenimiento(id);
+                        Alert.alert("Correcto","Mantenimiento finalizado.");
 
                         cargar();
+
+                    }catch(error:any){
+
+                        console.log(error.response?.data);
+
+                        Alert.alert(
+                            "Error",
+                            error.response?.data?.mensaje || error.message
+                        );
 
                     }
 
                 }
+            }
+        ]
+    );
 
-            ]
-
-        );
-
-    };
+};
 
     const estado = (item: any) => {
-
         if (item.fecha_fin) {
-
-            return "🟢 Finalizado";
-
+            return { icon: "check-circle-outline", text: "Finalizado", color: "#16A34A" };
         }
-
-        return "🟡 En proceso";
-
+        return { icon: "progress-clock", text: "En proceso", color: "#EAB308" };
     };
+
 
     return (
 
@@ -166,7 +166,10 @@ export default function Mantenimientos() {
                     onPress={() => router.push("/home")}
                     activeOpacity={0.8}
                 >
-                    <Text style={styles.backButtonText}>← Volver</Text>
+                    <View style={styles.backButtonContent}>
+                        <MaterialCommunityIcons name="arrow-left" size={16} color="#0f172a" />
+                        <Text style={[styles.backButtonText, { marginLeft: 8 }]}>Volver</Text>
+                    </View>
                 </TouchableOpacity>
 
                 <Text style={styles.title}>
@@ -202,79 +205,73 @@ export default function Mantenimientos() {
                     :
 
                     <FlatList
-
                         data={lista}
-
                         keyExtractor={(item) => item.id_mantenimiento.toString()}
+                        renderItem={({ item }) => {
 
-                        renderItem={({ item }) => (
+                            const infoEstado = estado(item);
 
-                            <View style={styles.card}>
+                            return (
 
-                                <Text style={styles.nombre}>
+                                <View style={styles.card}>
 
-                                    {item.Activo?.nombre}
+                                    <Text style={styles.nombre}>
+                                        {item.Activo?.nombre}
+                                    </Text>
 
-                                </Text>
+                                    <Text>
+                                        Proveedor: {item.Proveedor?.nombre}
+                                    </Text>
 
-                                <Text>
+                                    <Text>
+                                        Costo: ₡ {item.costo}
+                                    </Text>
 
-                                    Proveedor:
+                                    <View style={styles.estadoContainer}>
 
-                                    {" "}
+                                        <MaterialCommunityIcons
+                                            name={infoEstado.icon as any}
+                                            size={18}
+                                            color={infoEstado.color}
+                                        />
 
-                                    {item.Proveedor?.nombre}
-
-                                </Text>
-
-                                <Text>
-
-                                    Costo:
-
-                                    ₡ {item.costo}
-
-                                </Text>
-
-                                <Text>
-
-                                    {estado(item)}
-
-                                </Text>
-
-                                <Text>
-
-                                    {item.descripcion}
-
-                                </Text>
-
-                                {
-
-                                    !item.fecha_fin && (
-
-                                        <TouchableOpacity
-
-                                            style={styles.finalizar}
-
-                                            onPress={() => finalizar(item.id_mantenimiento)}
-
+                                        <Text
+                                            style={[
+                                                styles.estadoTexto,
+                                                { color: infoEstado.color }
+                                            ]}
                                         >
+                                            {infoEstado.text}
+                                        </Text>
 
-                                            <Text style={styles.finalizarText}>
+                                    </View>
 
-                                                Finalizar
+                                    <Text>
+                                        {item.descripcion}
+                                    </Text>
 
-                                            </Text>
+                                    {
+                                        !item.fecha_fin && (
 
-                                        </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={styles.finalizar}
+                                                onPress={() => finalizar(item.id_mantenimiento)}
+                                            >
 
-                                    )
+                                                <Text style={styles.finalizarText}>
+                                                    Finalizar
+                                                </Text>
 
-                                }
+                                            </TouchableOpacity>
 
-                            </View>
+                                        )
+                                    }
 
-                        )}
+                                </View>
 
+                            );
+
+                        }}
                     />
 
             }
@@ -509,11 +506,27 @@ const styles = StyleSheet.create({
         padding: 12
     },
 
+    backButtonContent: {
+        borderColor: "#ddd"
+    },
+
     save: {
         backgroundColor: "#2563eb",
         padding: 12,
         borderRadius: 10,
         paddingHorizontal: 25
-    }
+    },
+    estadoContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 8,
+    },
+
+    estadoTexto: {
+        marginLeft: 8,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+
 
 });

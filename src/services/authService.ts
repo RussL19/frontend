@@ -142,3 +142,30 @@ export const actualizarPerfil = async (
 
   return response.data;
 };
+
+export const recuperarPassword=async(correo:string)=>{
+
+    return await api.post(
+
+        "/recuperar-password",
+
+        {correo}
+
+    );
+
+};
+
+export const resetPassword=async(token:string,password:string)=>{
+
+    return await api.post(
+
+        "/reset-password",
+
+        {
+            token,
+            password
+        }
+
+    );
+
+};
