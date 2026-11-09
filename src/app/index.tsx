@@ -2,17 +2,17 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
-import { login, recuperarPassword, register } from "../services/authService";
+import { login, recuperarPassword, register, verificarCodigoLogin } from "../services/authService";
 export default function LoginScreen() {
 
   const [correo, setCorreo] = useState("");  // Estado para almacenar el correo electrónico ingresado por el usuario
@@ -23,6 +23,12 @@ export default function LoginScreen() {
   const [correoRegistro, setCorreoRegistro] = useState("");  // Estado para almacenar el correo durante el registro
   const [passwordRegistro, setPasswordRegistro] = useState("");  // Estado para almacenar la contraseña durante el registro
   const [confirmarPasswordRegistro, setConfirmarPasswordRegistro] = useState("");  // Estado para almacenar la confirmación de la contraseña durante el registro
+  const [error, setError] = useState("");
+  const [exito, setExito] = useState("");
+  const [requiere2FA, setRequiere2FA] = useState(false);
+  const [challengeToken, setChallengeToken] = useState("");
+  const [codigo2FA, setCodigo2FA] = useState("");
+  const [mostrarPoliticas, setMostrarPoliticas] = useState(false);
 
   useEffect(() => {
     verificarSesion();  // Función que verifica si el usuario ya ha iniciado sesión previamente y redirige a la pantalla de inicio si es así
@@ -46,19 +52,77 @@ export default function LoginScreen() {
     }
   };
 
-  const iniciarSesion = async () => {  // Función que maneja el inicio de sesión del usuario, enviando los datos al backend y almacenando el token y la información del usuario en AsyncStorage
+
+  const iniciarSesion = async () => {
+    setError("");
+    // 1. Validar campos vacíos
+    if (!correo.trim() && !password) {
+      setError(
+        "Por favor, ingrese su correo electrónico y contraseña."
+      );
+      return;
+    }
+
+    if (!correo.trim()) {
+      setError(
+        "Por favor, ingrese su correo electrónico."
+      );
+      return;
+    }
+
+    if (!password) {
+      setError(
+        "Por favor, ingrese su contraseña."
+      );
+      return;
+    }
+
+    // 2. Validar formato del correo
+    const correoLimpio = correo.trim();
+    const formatoCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!formatoCorreo.test(correoLimpio)) {
+      setError(
+        "Correo inválido"
+      );
+      return;
+    }
+
     try {
-
-
       const respuesta = await login({
-        correo,
+        correo: correoLimpio,
         password,
       });
 
-      await AsyncStorage.setItem(
-        "token",
-        respuesta.token
-      );
+      
+      // Si el usuario tiene doble factor activado
+      if (respuesta.requiere2FA) {
+        if (!respuesta.challengeToken) {
+          setError("No se recibió el token de verificación.");
+          return;
+        }
+
+        setChallengeToken(respuesta.challengeToken);
+        setRequiere2FA(true);
+        setCodigo2FA("");
+        setError("");
+        setExito("");
+
+        return;
+      }
+
+      if (respuesta.requiere2FA) {
+        setError("Debes completar la verificación de Google Authenticator.");
+        return;
+      }
+
+      if (!respuesta.token || !respuesta.usuario) {
+        setError("Respuesta de inicio de sesión incompleta.");
+        return;
+      }
+
+      // Guardar el token definitivo
+      await AsyncStorage.setItem("token", respuesta.token);
 
       await AsyncStorage.setItem(
         "usuario",
@@ -70,34 +134,108 @@ export default function LoginScreen() {
         respuesta.usuario.id_rol.toString()
       );
 
+
       setMostrarPerfil(true);
 
+      setExito("Éxito. Inicio de sesión correcto.");
+
+      router.replace("/home");
+    } catch (error: any) {
+      const status = error.response?.status;
+      const mensaje = error.response?.data?.mensaje;
+
+      console.log("Error de inicio de sesión:", mensaje || error.message);
+
+      // 3. Credenciales incorrectas
+      if (status === 401) {
+        setError(
+          "Inicio de sesión fallido. El correo electrónico o la contraseña son incorrectos."
+        );
+        return;
+      }
+
+      // 4. Error de conexión
+      if (!error.response) {
+        setError(
+          "Error de conexión. No se pudo conectar con el servidor. Verifique su conexión e inténtelo nuevamente."
+        );
+        return;
+      }
+
+      // 5. Otros errores del servidor
+      setError(
+        mensaje || "Ocurrió un problema al iniciar sesión. Inténtelo nuevamente."
+      );
+    }
+  };
 
 
-      Alert.alert("Éxito", "Login correcto");
+  const verificar2FA = async () => {
+    setError("");
+    setExito("");
+
+    if (!codigo2FA.trim()) {
+      setError("Ingresa el código de Google Authenticator.");
+      return;
+    }
+
+    if (!/^\d{6}$/.test(codigo2FA.trim())) {
+      setError("El código debe contener seis dígitos.");
+      return;
+    }
+
+    try {
+      const respuesta = await verificarCodigoLogin({
+        challengeToken,
+        codigo: codigo2FA.trim(),
+      });
+
+      if (!respuesta.token || !respuesta.usuario) {
+        setError("No se recibió una sesión válida.");
+        return;
+      }
+
+      // Guardar únicamente el token definitivo
+      await AsyncStorage.setItem("token", respuesta.token);
+
+      await AsyncStorage.setItem(
+        "usuario",
+        JSON.stringify(respuesta.usuario)
+      );
+
+      await AsyncStorage.setItem(
+        "id_rol",
+        respuesta.usuario.id_rol.toString()
+      );
+
+      setRequiere2FA(false);
+      setChallengeToken("");
+      setCodigo2FA("");
+      setMostrarPerfil(true);
+
+      setExito("Autenticación completada correctamente.");
 
       router.replace("/home");
 
     } catch (error: any) {
+      const mensaje = error.response?.data?.mensaje;
 
-      console.log(error.response?.data);
-
-      Alert.alert(
-        "No se pudo iniciar sesión",
-        error.response?.data?.mensaje || "Ha ocurrido un error."
+      setError(
+        mensaje || "Código incorrecto o expirado. Inténtalo nuevamente."
       );
-
     }
   };
 
+
+
   const registrarNuevoUsuario = async () => {   // Función que maneja el registro de un nuevo usuario, validando los campos y enviando los datos al backend o guardándolos localmente si el backend no está disponible
     if (!nombreUsuario.trim() || !correoRegistro.trim() || !passwordRegistro.trim() || !confirmarPasswordRegistro.trim()) {
-      Alert.alert("Campos requeridos", "Completa todos los campos para registrar un usuario");
+      setError("Campos requeridos. Completa todos los campos para registrar un usuario");
       return;
     }
 
     if (passwordRegistro !== confirmarPasswordRegistro) {
-      Alert.alert("Error", "Las contraseñas no coinciden");
+      setError("Error. Las contraseñas no coinciden");
       return;
     }
 
@@ -123,19 +261,18 @@ export default function LoginScreen() {
         ? `${mensajeBase}. Nota: el registro se guardó localmente en el dispositivo.`
         : mensajeBase;
 
-      Alert.alert("Registro exitoso", mensajeFinal);
+      setExito(mensajeFinal);
       router.replace("/home");
     } catch (error: any) {
-      Alert.alert("No se pudo registrar", error.message || "Inténtalo nuevamente");
+      setError("No se pudo registrar. Inténtalo nuevamente.");
     }
   };
 
   const recuperarContrasena = async () => {
 
     if (!correo.trim()) {
-      Alert.alert(
-        "Correo requerido",
-        "Ingrese su correo electrónico."
+      setError(
+        "Correo requerido. Ingrese su correo electrónico."
       );
       return;
     }
@@ -144,24 +281,22 @@ export default function LoginScreen() {
 
       await recuperarPassword(correo);
 
-      Alert.alert(
-        "Éxito",
-        "Si el correo existe, se ha enviado un enlace para recuperar la contraseña."
+      setError(
+        "Éxito. Si el correo existe, se ha enviado un enlace para recuperar la contraseña."
       );
-      
+
 
     } catch (error: any) {
       console.log("====================");
-        console.log(error);
-        console.log(error.message);
-        console.log(error.stack);
-        console.log("====================");
+      console.log(error);
+      console.log(error.message);
+      console.log(error.stack);
+      console.log("====================");
 
       console.log(error);
 
-      Alert.alert(
-        "Error",
-        error.response?.data?.mensaje || "No fue posible enviar el correo."
+      setError(
+        "Error. No fue posible enviar el correo."
       );
 
     }
@@ -183,7 +318,7 @@ export default function LoginScreen() {
         >
           <View style={styles.card}>
             <View style={styles.brandBadge}>
-              <Text style={styles.logo}>�</Text>
+              <Text style={styles.logo}>💻</Text>
             </View>
 
             <Text style={styles.title}>Gestión de Activos</Text>
@@ -241,6 +376,75 @@ export default function LoginScreen() {
                   <Text style={styles.linkText}>Volver a iniciar sesión</Text>
                 </TouchableOpacity>
               </View>
+            ) : requiere2FA ? (
+              <View style={styles.registerCard}>
+                <Text style={styles.title}>Verificación en dos pasos</Text>
+
+                <Text style={styles.subtitle}>
+                  Abre Google Authenticator e introduce el código de seis dígitos
+                  para continuar.
+                </Text>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Código de 6 dígitos"
+                  placeholderTextColor="#94A3B8"
+                  value={codigo2FA}
+                  onChangeText={(texto) =>
+                    setCodigo2FA(texto.replace(/[^0-9]/g, "").slice(0, 6))
+                  }
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  textAlign="center"
+                />
+
+                {error !== "" && (
+                  <View
+                    style={{
+                      backgroundColor: "#FEF2F2",
+                      borderColor: "#FECACA",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginTop: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text style={{ color: "#B91C1C", fontSize: 13 }}>
+                      {error}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={verificar2FA}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.buttonText}>Verificar código</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setRequiere2FA(false);
+                    setChallengeToken("");
+                    setCodigo2FA("");
+                    setError("");
+                    setPassword("");
+                  }}
+                >
+                  <Text
+                    style={{
+                      textAlign: "center",
+                      color: "#2563EB",
+                      marginTop: 15,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Volver al inicio de sesión
+                  </Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <>
                 <TextInput
@@ -262,6 +466,42 @@ export default function LoginScreen() {
                   onChangeText={setPassword}
                 />
 
+                {error !== "" && (
+                  <View
+                    style={{
+                      backgroundColor: "#FEF2F2",
+                      borderColor: "#FECACA",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginTop: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text style={{ color: "#B91C1C", fontSize: 13 }}>
+                      {error}
+                    </Text>
+                  </View>
+                )}
+
+                {exito !== "" && (
+                  <View
+                    style={{
+                      backgroundColor: "#d0feca",
+                      borderColor: "#d0feca",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginTop: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text style={{ color: "#31bd70", fontSize: 13 }}>
+                      {exito}
+                    </Text>
+                  </View>
+                )}
+
                 <TouchableOpacity
                   style={styles.button}
                   onPress={iniciarSesion}
@@ -270,8 +510,6 @@ export default function LoginScreen() {
                   <Text style={styles.buttonText}>Iniciar sesión</Text>
                 </TouchableOpacity>
 
-                
-
                 <TouchableOpacity
                   style={styles.secondaryButton}
                   onPress={() => setMostrarRegistro(true)}
@@ -279,13 +517,14 @@ export default function LoginScreen() {
                 >
                   <Text style={styles.secondaryButtonText}>Registrar</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity onPress={recuperarContrasena}>
                   <Text
                     style={{
                       textAlign: "center",
                       color: "#2563EB",
                       marginTop: 15,
-                      fontWeight: "600"
+                      fontWeight: "600",
                     }}
                   >
                     ¿Olvidaste tu contraseña?
@@ -295,9 +534,49 @@ export default function LoginScreen() {
             )}
           </View>
 
+          <TouchableOpacity onPress={() => setMostrarPoliticas(true)}>
+            <Text style={styles.privacyLink}>Políticas de privacidad</Text>
+          </TouchableOpacity>
+
           <Text style={styles.footer}>Sistema de Gestión de Activos v1.0</Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={mostrarPoliticas}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMostrarPoliticas(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Políticas de privacidad</Text>
+              <TouchableOpacity onPress={() => setMostrarPoliticas(false)}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalText}>
+                Esta aplicación recopila únicamente la información necesaria para la gestión de activos, usuarios y asignaciones dentro del sistema.
+              </Text>
+              <Text style={styles.modalText}>
+                Los datos personales, como correo, nombre de usuario y datos de acceso, se utilizan para autenticar al usuario y permitir el uso correcto de la plataforma.
+              </Text>
+              <Text style={styles.modalText}>
+                La información se guarda de forma segura y se emplea exclusivamente para la operación del sistema, control de inventario, asignaciones y reportes autorizados por la administración.
+              </Text>
+              <Text style={styles.modalText}>
+                No se compartirán datos con terceros sin consentimiento explícito, salvo obligación legal o requerimiento institucional autorizado.
+              </Text>
+              <Text style={styles.modalText}>
+                El usuario puede solicitar la revisión o actualización de su información contactando al administrador del sistema.
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -450,10 +729,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  privacyLink: {
+    textAlign: "center",
+    color: "#2563EB",
+    marginTop: 16,
+    fontWeight: "600",
+    fontSize: 13,
+  },
+
   footer: {
     textAlign: "center",
-    marginTop: 22,
+    marginTop: 12,
     color: "#CBD5E1",
     fontSize: 12,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+    maxHeight: "80%",
+  },
+
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+
+  closeButtonText: {
+    fontSize: 20,
+    color: "#334155",
+    fontWeight: "700",
+  },
+
+  modalContent: {
+    maxHeight: 360,
+  },
+
+  modalText: {
+    fontSize: 14,
+    color: "#334155",
+    lineHeight: 22,
+    marginBottom: 12,
   },
 });

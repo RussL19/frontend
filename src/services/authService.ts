@@ -5,6 +5,24 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface LoginResponse {
+  requiere2FA?: boolean;
+  challengeToken?: string;
+  token?: string;
+  usuario?: {
+    id_usuario: number;
+    nombre_usuario: string;
+    correo: string;
+    id_rol: number;
+  };
+  mensaje?: string;
+}
+
+export interface Verificar2FARequest {
+  challengeToken: string;
+  codigo: string;
+}
+
 export interface RegisterRequest {
   nombre_usuario: string;
   correo: string;
@@ -90,12 +108,22 @@ export const register = async (data: RegisterRequest) => {
   };
 };
 
-export const login = async (data: LoginRequest) => {
+export const login = async (
+  data: LoginRequest
+): Promise<LoginResponse> => {
   try {
-    const response = await api.post("/login", data);
+    const response = await api.post<LoginResponse>("/login", data);
     return response.data;
-  } catch (error) {
+
+  } catch (error: any) {
+
+    // Solo utilizar el respaldo local si existe un problema de conexión
+    if (error.response) {
+      throw error;
+    }
+
     const usuarios = await obtenerUsuariosGuardados();
+
     const usuarioLocal = usuarios.find(
       (usuario: any) =>
         usuario.correo.toLowerCase() === data.correo.toLowerCase() &&
@@ -104,9 +132,10 @@ export const login = async (data: LoginRequest) => {
 
     if (usuarioLocal) {
       return {
+        requiere2FA: false,
         token: `local-token-${usuarioLocal.id}`,
         usuario: {
-          id: usuarioLocal.id,
+          id_usuario: usuarioLocal.id,
           nombre_usuario: usuarioLocal.nombre_usuario,
           correo: usuarioLocal.correo,
           id_rol: usuarioLocal.id_rol,
@@ -116,6 +145,45 @@ export const login = async (data: LoginRequest) => {
 
     throw error;
   }
+};
+
+export interface LoginResponse {
+  requiere2FA?: boolean;
+  challengeToken?: string;
+  token?: string;
+  usuario?: {
+    id_usuario: number;
+    nombre_usuario: string;
+    correo: string;
+    id_rol: number;
+  };
+  mensaje?: string;
+}
+
+export interface Verificar2FARequest {
+  challengeToken: string;
+  codigo: string;
+}
+
+export interface Verificar2FAResponse {
+  token: string;
+  usuario: {
+    id_usuario: number;
+    nombre_usuario: string;
+    correo: string;
+    id_rol: number;
+  };
+}
+
+export const verificarCodigoLogin = async (
+  data: Verificar2FARequest
+) => {
+  const response = await api.post(
+    "/2fa/verificar-login",
+    data
+  );
+
+  return response.data;
 };
 
 export const actualizarPerfil = async (

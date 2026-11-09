@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Picker } from "@react-native-picker/picker";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -16,6 +17,20 @@ import {
 } from "react-native";
 
 import { actualizarActivo, crearActivo, obtenerActivos } from "../services/activoService";
+
+const estadosDisponibles = ["Disponible", "Asignado", "Mantenimiento", "Baja"];
+
+const normalizarEstado = (valor: string = "") => {
+    const texto = valor.trim().toLowerCase();
+
+    if (!texto) return "Disponible";
+    if (texto.includes("dispon")) return "Disponible";
+    if (texto.includes("asign") || texto.includes("uso")) return "Asignado";
+    if (texto.includes("mant")) return "Mantenimiento";
+    if (texto.includes("baja")) return "Baja";
+
+    return "Disponible";
+};
 
 type Activo = {
     id_activo?: number;
@@ -109,7 +124,7 @@ export default function Activos() {
         setNombre(activo.nombre ?? "");
         setCodigo(activo.codigo ?? "");
         setSerie(activo.serie ?? "");
-        setEstado(activo.estado ?? "");
+        setEstado(normalizarEstado(activo.estado ?? ""));
         setModalVisible(true);
     };
 
@@ -232,7 +247,7 @@ export default function Activos() {
                             setNombre("");
                             setCodigo("");
                             setSerie("");
-                            setEstado("");
+                            setEstado("Disponible");
                             setModalVisible(true);
                         }}
                         activeOpacity={0.9}
@@ -386,12 +401,18 @@ export default function Activos() {
                             />
 
                             <Text style={styles.fieldLabel}>Estado</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={estado}
-                                onChangeText={setEstado}
-                                placeholder="Disponible, En uso, Mantenimiento o Baja"
-                            />
+                            <View style={styles.pickerContainer}>
+                                <Picker
+                                    selectedValue={estado || "Disponible"}
+                                    onValueChange={(value) => setEstado(String(value))}
+                                    style={styles.picker}
+                                    dropdownIconColor="#2563EB"
+                                >
+                                    {estadosDisponibles.map((valor) => (
+                                        <Picker.Item key={valor} label={valor} value={valor} />
+                                    ))}
+                                </Picker>
+                            </View>
 
                             <View style={styles.modalActions}>
                                 {activoSeleccionado ? (
@@ -460,12 +481,18 @@ export default function Activos() {
                                 />
 
                                 <Text style={styles.fieldLabel}>Estado</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={estado}
-                                    onChangeText={setEstado}
-                                    placeholder="Disponible, En uso, Mantenimiento o Baja"
-                                />
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={estado || "Disponible"}
+                                        onValueChange={(value) => setEstado(String(value))}
+                                        style={styles.picker}
+                                        dropdownIconColor="#2563EB"
+                                    >
+                                        {estadosDisponibles.map((valor) => (
+                                            <Picker.Item key={valor} label={valor} value={valor} />
+                                        ))}
+                                    </Picker>
+                                </View>
 
                                 <View style={styles.modalActions}>
                                     {activoSeleccionado ? (
@@ -770,6 +797,17 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#0f172a",
         backgroundColor: "#f8fafc"
+    },
+    pickerContainer: {
+        borderWidth: 1,
+        borderColor: "#e2e8f0",
+        borderRadius: 12,
+        backgroundColor: "#f8fafc",
+        overflow: "hidden"
+    },
+    picker: {
+        color: "#0f172a",
+        height: 46
     },
     modalActions: {
         flexDirection: "row",

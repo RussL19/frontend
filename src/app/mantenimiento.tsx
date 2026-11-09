@@ -12,9 +12,12 @@ import {
     View
 } from "react-native";
 
+import { Picker } from "@react-native-picker/picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
+import { obtenerActivos } from "../services/activoService";
+import { obtenerProveedores } from "../services/proveedorService";
 import {
     crearMantenimiento,
     finalizarMantenimiento,
@@ -25,11 +28,12 @@ export default function Mantenimientos() {
 
     const [lista, setLista] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activos, setActivos] = useState<any[]>([]);
+    const [proveedores, setProveedores] = useState<any[]>([]);
 
     const [modal, setModal] = useState(false);
 
     const [idActivo, setIdActivo] = useState("");
-
     const [idProveedor, setIdProveedor] = useState("");
 
     const [descripcion, setDescripcion] = useState("");
@@ -48,9 +52,23 @@ export default function Mantenimientos() {
 
             setLoading(true);
 
-            const datos = await obtenerMantenimientos();
+            const [datos, activosLista, proveedoresLista] = await Promise.all([
+                obtenerMantenimientos(),
+                obtenerActivos(),
+                obtenerProveedores()
+            ]);
 
             setLista(datos);
+            setActivos(Array.isArray(activosLista) ? activosLista : activosLista?.activos ?? []);
+            setProveedores(Array.isArray(proveedoresLista) ? proveedoresLista : proveedoresLista?.proveedores ?? []);
+
+            if (!idActivo && Array.isArray(activosLista) && activosLista[0]) {
+                setIdActivo(String(activosLista[0].id_activo));
+            }
+
+            if (!idProveedor && Array.isArray(proveedoresLista) && proveedoresLista[0]) {
+                setIdProveedor(String(proveedoresLista[0].id_proveedor));
+            }
 
         } catch (error) {
 
@@ -98,12 +116,12 @@ export default function Mantenimientos() {
 
     const limpiar = () => {
 
-        setIdActivo("");
+        const primerActivo = activos[0]?.id_activo ? String(activos[0].id_activo) : "";
+        const primerProveedor = proveedores[0]?.id_proveedor ? String(proveedores[0].id_proveedor) : "";
 
-        setIdProveedor("");
-
+        setIdActivo(primerActivo);
+        setIdProveedor(primerProveedor);
         setDescripcion("");
-
         setCosto("");
 
     };
@@ -121,13 +139,19 @@ export default function Mantenimientos() {
 
                     try{
 
-                        const resp=await finalizarMantenimiento(id);
+                        await finalizarMantenimiento(id);
 
-                        console.log(resp);
+                        setLista((prev) =>
+                            prev.map((item) =>
+                                item.id_mantenimiento === id
+                                    ? { ...item, fecha_fin: new Date().toISOString() }
+                                    : item
+                            )
+                        );
+
+                        await cargar();
 
                         Alert.alert("Correcto","Mantenimiento finalizado.");
-
-                        cargar();
 
                     }catch(error:any){
 
@@ -296,29 +320,43 @@ export default function Mantenimientos() {
 
                         </Text>
 
-                        <TextInput
+                        <Text style={styles.label}>Activo</Text>
+                        <View style={styles.pickerContainer}>
+                            <Picker
+                                selectedValue={idActivo || ""}
+                                onValueChange={(value) => setIdActivo(String(value))}
+                                style={styles.picker}
+                                dropdownIconColor="#2563EB"
+                            >
+                                <Picker.Item label="Seleccione un activo" value="" />
+                                {activos.map((activo) => (
+                                    <Picker.Item
+                                        key={activo.id_activo}
+                                        label={`${activo.codigo ?? "Sin código"} - ${activo.nombre ?? "Sin nombre"}`}
+                                        value={String(activo.id_activo)}
+                                    />
+                                ))}
+                            </Picker>
+                        </View>
 
-                            placeholder="Id activo"
-
-                            value={idActivo}
-
-                            onChangeText={setIdActivo}
-
-                            style={styles.input}
-
-                        />
-
-                        <TextInput
-
-                            placeholder="Id proveedor"
-
-                            value={idProveedor}
-
-                            onChangeText={setIdProveedor}
-
-                            style={styles.input}
-
-                        />
+                        <Text style={styles.label}>Proveedor</Text>
+                        <View style={styles.pickerContainer}>
+                            <Picker
+                                selectedValue={idProveedor || ""}
+                                onValueChange={(value) => setIdProveedor(String(value))}
+                                style={styles.picker}
+                                dropdownIconColor="#2563EB"
+                            >
+                                <Picker.Item label="Seleccione un proveedor" value="" />
+                                {proveedores.map((proveedor) => (
+                                    <Picker.Item
+                                        key={proveedor.id_proveedor}
+                                        label={proveedor.nombre}
+                                        value={String(proveedor.id_proveedor)}
+                                    />
+                                ))}
+                            </Picker>
+                        </View>
 
                         <TextInput
 
@@ -486,6 +524,28 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: "bold",
         marginBottom: 20
+    },
+
+    label: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: "#334155",
+        marginBottom: 8,
+        marginTop: 4
+    },
+
+    pickerContainer: {
+        borderWidth: 1,
+        borderColor: "#ddd",
+        borderRadius: 10,
+        backgroundColor: "#fff",
+        marginBottom: 15,
+        overflow: "hidden"
+    },
+
+    picker: {
+        color: "#0f172a",
+        height: 46
     },
 
     input: {

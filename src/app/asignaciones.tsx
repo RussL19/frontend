@@ -4,7 +4,13 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { obtenerActivos } from "../services/activoService";
-import { crearAsignacion, devolverActivo, obtenerAsignaciones, } from "../services/asignacionService";
+import {
+    crearAsignacion,
+    devolverActivo,
+    generarPDFAsignacion,
+    generarPDFDevolucion,
+    obtenerAsignaciones,
+} from "../services/asignacionService";
 import { obtenerEmpleados } from "../services/empleadoService";
 
 interface Activo {
@@ -83,6 +89,27 @@ export default function Ubicaciones() {
         }
     };
 
+    const abrirBoletaPdf = async (id: number, tipo: "asignacion" | "devolucion") => {
+        try {
+            const pdfBlob = tipo === "asignacion"
+                ? await generarPDFAsignacion(id)
+                : await generarPDFDevolucion(id);
+
+            const pdfUrl = URL.createObjectURL(
+                new Blob([pdfBlob], { type: "application/pdf" })
+            );
+
+            window.open(pdfUrl, "_blank", "noopener,noreferrer");
+            setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+        } catch (error: any) {
+            console.log(error);
+            Alert.alert(
+                "Error",
+                error.response?.data?.mensaje || "No fue posible abrir la boleta."
+            );
+        }
+    };
+
     const asignarActivo = async () => {
         try {
             if (!activoSeleccionado || !empleadoSeleccionado) {
@@ -95,22 +122,13 @@ export default function Ubicaciones() {
                 id_empleado: Number(empleadoSeleccionado),
             });
 
-
-            console.log(asignacion);
-
             Alert.alert("Éxito", "Activo asignado correctamente.");
 
             setActivoSeleccionado("");
             setEmpleadoSeleccionado("");
 
-            console.log(asignacion);
-
             cargarTodo();
-
-            window.open(
-                `http://192.168.0.11:3000/api/asignaciones/${asignacion.id_asignacion}/pdf`,
-                "_blank"
-            );
+            await abrirBoletaPdf(asignacion.id_asignacion, "asignacion");
         } catch (error) {
             console.log("ERROR COMPLETO:", error);
 
@@ -130,11 +148,7 @@ export default function Ubicaciones() {
 
             Alert.alert("Éxito", "Activo devuelto correctamente.");
 
-            window.open(
-                `http://192.168.0.11:3000/api/asignaciones/${id}/devolucion/pdf`,
-                "_blank"
-            );
-
+            await abrirBoletaPdf(id, "devolucion");
             cargarTodo();
 
         } catch (error: any) {

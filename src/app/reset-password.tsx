@@ -1,12 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { resetPassword } from "../services/authService";
@@ -23,12 +23,16 @@ export default function ResetPassword() {
 
   const [guardando, setGuardando] = useState(false);
 
+  const [error, setError] = useState("");
+
+  const [exito, setExito] = useState("");
+
   const cambiarPassword = async () => {
+    setError("");
 
     if (!password || !confirmarPassword) {
 
-      Alert.alert(
-        "Campos requeridos",
+      setError(
         "Complete todos los campos."
       );
 
@@ -38,9 +42,8 @@ export default function ResetPassword() {
 
     if (password !== confirmarPassword) {
 
-      Alert.alert(
-        "Error",
-        "Las contraseñas no coinciden."
+      setError(
+        "Error. Las contraseñas no coinciden."
       );
 
       return;
@@ -49,9 +52,8 @@ export default function ResetPassword() {
 
     if (password.length < 6) {
 
-      Alert.alert(
-        "Error",
-        "La contraseña debe tener al menos 6 caracteres."
+      setError(
+        "Error. La contraseña debe tener al menos 6 caracteres."
       );
 
       return;
@@ -77,13 +79,14 @@ export default function ResetPassword() {
           }
         ]
       );
+      setExito(
+        "Su contraseña fue actualizada correctamente."
+      );
 
     } catch (error: any) {
 
-      Alert.alert(
-        "Error",
-        error.response?.data?.mensaje ||
-          "No fue posible cambiar la contraseña."
+      setError(
+        "Error. No fue posible cambiar la contraseña."
       );
 
     } finally {
@@ -123,6 +126,41 @@ export default function ResetPassword() {
           value={confirmarPassword}
           onChangeText={setConfirmarPassword}
         />
+
+        {error !== "" && (
+          <View
+            style={{
+              backgroundColor: "#FEF2F2",
+              borderColor: "#FECACA",
+              borderWidth: 1,
+              borderRadius: 10,
+              padding: 12,
+              marginTop: 12,
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ color: "#B91C1C", fontSize: 13 }}>
+              {error}
+            </Text>
+          </View>
+        )}
+        {exito !== "" && (
+          <View
+            style={{
+              backgroundColor: "#d0feca",
+              borderColor: "#d0feca",
+              borderWidth: 1,
+              borderRadius: 10,
+              padding: 12,
+              marginTop: 12,
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ color: "#31bd70", fontSize: 13 }}>
+              {exito}
+            </Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={styles.button}
