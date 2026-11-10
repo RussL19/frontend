@@ -38,18 +38,15 @@ export const crearMantenimiento = async (datos:any) => {
 
 };
 
-export const finalizarMantenimiento = async(id:number)=>{
 
-    const response=await api.patch(
+export const finalizarMantenimiento = async (
+  id: number,
+  estadoActivo: "Disponible" | "Baja"
+) => {
+  const response = await api.patch(
+    `/mantenimientos/${id}/finalizar`,
+    { estadoActivo }
+  );
 
-        `/mantenimientos/${id}/finalizar`,
-
-        {},
-
-        await getHeaders()
-
-    );
-
-    return response.data;
-
+  return response.data;
 };

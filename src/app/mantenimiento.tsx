@@ -5,24 +5,23 @@ import {
     Alert,
     FlatList,
     Modal,
+    Platform,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View
 } from "react-native";
 
-import { Picker } from "@react-native-picker/picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { obtenerActivos } from "../services/activoService";
-import { obtenerProveedores } from "../services/proveedorService";
 import {
     crearMantenimiento,
     finalizarMantenimiento,
     obtenerMantenimientos
 } from "../services/mantenimientoService";
+import { obtenerProveedores } from "../services/proveedorService";
 
 export default function Mantenimientos() {
 
@@ -39,6 +38,15 @@ export default function Mantenimientos() {
     const [descripcion, setDescripcion] = useState("");
 
     const [costo, setCosto] = useState("");
+    const [modalFinalizar, setModalFinalizar] = useState(false);
+    const [mantenimientoSeleccionado, setMantenimientoSeleccionado] =
+        useState<number | null>(null);
+
+    const [resultadoMantenimiento, setResultadoMantenimiento] =
+        useState<"Disponible" | "Baja">("Disponible");
+
+    const [guardando, setGuardando] = useState(false);
+
 
     useEffect(() => {
 
@@ -126,57 +134,58 @@ export default function Mantenimientos() {
 
     };
 
-    const finalizar = async (id:number)=>{
+    const finalizar = (id: number) => {
+        setMantenimientoSeleccionado(id);
+        setResultadoMantenimiento("Disponible");
+        setModalFinalizar(true);
+    };
 
-    Alert.alert(
-        "Finalizar",
-        "¿Desea finalizar este mantenimiento?",
-        [
-            {text:"Cancelar"},
-            {
-                text:"Aceptar",
-                onPress:async()=>{
+    const confirmarFinalizacion = async () => {
+        if (mantenimientoSeleccionado === null || guardando) return;
 
-                    try{
+        try {
+            setGuardando(true);
 
-                        await finalizarMantenimiento(id);
+            await finalizarMantenimiento(
+                mantenimientoSeleccionado,
+                resultadoMantenimiento
+            );
 
-                        setLista((prev) =>
-                            prev.map((item) =>
-                                item.id_mantenimiento === id
-                                    ? { ...item, fecha_fin: new Date().toISOString() }
-                                    : item
-                            )
-                        );
+            await cargar();
 
-                        await cargar();
+            setModalFinalizar(false);
+            setMantenimientoSeleccionado(null);
 
-                        Alert.alert("Correcto","Mantenimiento finalizado.");
-
-                    }catch(error:any){
-
-                        console.log(error.response?.data);
-
-                        Alert.alert(
-                            "Error",
-                            error.response?.data?.mensaje || error.message
-                        );
-
-                    }
-
-                }
+            if (Platform.OS === "web") {
+                window.alert("Mantenimiento finalizado correctamente.");
+            } else {
+                Alert.alert("Correcto", "Mantenimiento finalizado correctamente.");
             }
-        ]
-    );
 
-};
+        } catch (error: any) {
+            const mensaje =
+                error.response?.data?.mensaje ||
+                error.response?.data?.error ||
+                error.message ||
+                "No fue posible finalizar el mantenimiento.";
 
+            if (Platform.OS === "web") {
+                window.alert(mensaje);
+            } else {
+                Alert.alert("Error", mensaje);
+            }
+        } finally {
+            setGuardando(false);
+        }
+    };
     const estado = (item: any) => {
         if (item.fecha_fin) {
             return { icon: "check-circle-outline", text: "Finalizado", color: "#16A34A" };
         }
         return { icon: "progress-clock", text: "En proceso", color: "#EAB308" };
     };
+
+    
 
 
     return (
@@ -300,133 +309,106 @@ export default function Mantenimientos() {
 
             }
 
+
             <Modal
-
-                visible={modal}
-
-                animationType="slide"
-
+                visible={modalFinalizar}
                 transparent
-
+                animationType="fade"
+                onRequestClose={() => {
+                    if (!guardando) setModalFinalizar(false);
+                }}
             >
-
-                <View style={styles.modal}>
-
-                    <View style={styles.modalCard}>
-
-                        <Text style={styles.modalTitle}>
-
-                            Nuevo mantenimiento
-
+                <View style={{
+                    flex: 1,
+                    backgroundColor: "rgba(0,0,0,0.5)",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    padding: 20
+                }}>
+                    <View style={{
+                        backgroundColor: "#FFFFFF",
+                        padding: 24,
+                        borderRadius: 16,
+                        width: "100%",
+                        maxWidth: 420
+                    }}>
+                        <Text style={{
+                            fontSize: 22,
+                            fontWeight: "bold",
+                            marginBottom: 12
+                        }}>
+                            Finalizar mantenimiento
                         </Text>
 
-                        <Text style={styles.label}>Activo</Text>
-                        <View style={styles.pickerContainer}>
-                            <Picker
-                                selectedValue={idActivo || ""}
-                                onValueChange={(value) => setIdActivo(String(value))}
-                                style={styles.picker}
-                                dropdownIconColor="#2563EB"
-                            >
-                                <Picker.Item label="Seleccione un activo" value="" />
-                                {activos.map((activo) => (
-                                    <Picker.Item
-                                        key={activo.id_activo}
-                                        label={`${activo.codigo ?? "Sin código"} - ${activo.nombre ?? "Sin nombre"}`}
-                                        value={String(activo.id_activo)}
-                                    />
-                                ))}
-                            </Picker>
-                        </View>
+                        <Text style={{ marginBottom: 20 }}>
+                            Selecciona el resultado del mantenimiento:
+                        </Text>
 
-                        <Text style={styles.label}>Proveedor</Text>
-                        <View style={styles.pickerContainer}>
-                            <Picker
-                                selectedValue={idProveedor || ""}
-                                onValueChange={(value) => setIdProveedor(String(value))}
-                                style={styles.picker}
-                                dropdownIconColor="#2563EB"
-                            >
-                                <Picker.Item label="Seleccione un proveedor" value="" />
-                                {proveedores.map((proveedor) => (
-                                    <Picker.Item
-                                        key={proveedor.id_proveedor}
-                                        label={proveedor.nombre}
-                                        value={String(proveedor.id_proveedor)}
-                                    />
-                                ))}
-                            </Picker>
-                        </View>
+                        <TouchableOpacity
+                            style={{
+                                padding: 16,
+                                borderRadius: 10,
+                                marginBottom: 12,
+                                borderWidth: 2,
+                                borderColor:
+                                    resultadoMantenimiento === "Disponible"
+                                        ? "#16A34A"
+                                        : "#E5E7EB"
+                            }}
+                            onPress={() => setResultadoMantenimiento("Disponible")}
+                        >
+                            <Text>✓ Reparado — Disponible</Text>
+                        </TouchableOpacity>
 
-                        <TextInput
+                        <TouchableOpacity
+                            style={{
+                                padding: 16,
+                                borderRadius: 10,
+                                marginBottom: 20,
+                                borderWidth: 2,
+                                borderColor:
+                                    resultadoMantenimiento === "Baja"
+                                        ? "#DC2626"
+                                        : "#E5E7EB"
+                            }}
+                            onPress={() => setResultadoMantenimiento("Baja")}
+                        >
+                            <Text>✕ No reparable — Dar de baja</Text>
+                        </TouchableOpacity>
 
-                            placeholder="Costo"
+                        <TouchableOpacity
+                            disabled={guardando}
+                            onPress={confirmarFinalizacion}
+                            style={{
+                                backgroundColor: "#2563EB",
+                                padding: 15,
+                                borderRadius: 10,
+                                alignItems: "center",
+                                opacity: guardando ? 0.6 : 1
+                            }}
+                        >
+                            <Text style={{
+                                color: "#FFFFFF",
+                                fontWeight: "bold"
+                            }}>
+                                {guardando ? "Guardando..." : "Confirmar finalización"}
+                            </Text>
+                        </TouchableOpacity>
 
-                            value={costo}
-
-                            onChangeText={setCosto}
-
-                            keyboardType="numeric"
-
-                            style={styles.input}
-
-                        />
-
-                        <TextInput
-
-                            placeholder="Descripción"
-
-                            value={descripcion}
-
-                            onChangeText={setDescripcion}
-
-                            multiline
-
-                            style={[styles.input, { height: 90 }]}
-
-                        />
-
-                        <View style={styles.actions}>
-
-                            <TouchableOpacity
-
-                                style={styles.cancel}
-
-                                onPress={() => setModal(false)}
-
-                            >
-
-                                <Text>
-
-                                    Cancelar
-
-                                </Text>
-
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-
-                                style={styles.save}
-
-                                onPress={guardar}
-
-                            >
-
-                                <Text style={{ color: "#fff" }}>
-
-                                    Guardar
-
-                                </Text>
-
-                            </TouchableOpacity>
-
-                        </View>
-
+                        <TouchableOpacity
+                            disabled={guardando}
+                            onPress={() => setModalFinalizar(false)}
+                            style={{
+                                padding: 15,
+                                alignItems: "center"
+                            }}
+                        >
+                            <Text>Cancelar</Text>
+                        </TouchableOpacity>
                     </View>
-
                 </View>
-
             </Modal>
+
 
         </View>
 
